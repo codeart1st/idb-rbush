@@ -9,60 +9,116 @@
 <button id="insert4">Bulk-insert 1000</button>
 <button id="remove">Remove leftmost 10000</button>
 
-<script src="../rbush.js"></script>
+<script src="../dist/rbush.js"></script>
 <script src="viz.js"></script>
 <script>
 
-var N = 100000;
+    var N = 100000;
 
-function genData(N) {
-    var data = [];
-    for (var i = 0; i < N; i++) {
-        data[i] = randBox(1);
+    // https://gist.github.com/jed/982883
+    const uuid = function b(a) { return a ? (a ^ Math.random() * 16 >> a / 4).toString(16) : ([1e7] + -1e3 + -4e3 + -8e3 + -1e11).replace(/[018]/g, b) }
+    const dbs = new Map()
+    const layerName = 'test'.toLowerCase()
+    const database = 'spatial-cache'
+
+    const createDB = database => {
+        const request = self.indexedDB.open(database, 1)
+        return new Promise((resolve, reject) => {
+            request.onerror = event => {
+                console.error(event)
+                reject(event)
+            }
+            request.onsuccess = event => {
+                console.log(event)
+                resolve(request.result)
+            }
+            request.onupgradeneeded = event => {
+                console.log(event)
+                const db = request.result
+
+                db.createObjectStore(`${layerName}_data`, { keyPath: 'id' })
+                db.createObjectStore(`${layerName}_rbush`, { keyPath: 'id' })
+
+                event.target.transaction.oncomplete = event => {
+                    console.log(event)
+                }
+            }
+        })
     }
-    return data;
-}
 
-var tree = rbush(10);
-var data = [];
+    dbs.set(database, createDB(database))
 
-genBulkInsert(N)();
-
-function genInsertOneByOne(K) {
-    return function () {
-        var data2 = genData(K);
-
-        console.time('insert ' + K + ' items');
-        for (var i = 0; i < K; i++) {
-            tree.insert(data2[i]);
+    function genData(N) {
+        var data = [];
+        for (var i = 0; i < N; i++) {
+            data[i] = {
+                bbox: randBox(1),
+                id: uuid()
+            }
         }
-        console.timeEnd('insert ' + K + ' items');
+        return data;
+    }
 
-        data = data.concat(data2);
+    var data = [];
+    var tree = null;
 
-        draw();
-    };
-}
+    const init = async () => {
+        console.time('Build tree instance')
+        const db = await dbs.get(database)
+        try {
+            tree = await rbush(db, `${layerName}_rbush`, 10)
 
-function genBulkInsert(K) {
-    return function () {
-        var data2 = genData(K);
+            console.timeEnd('Build tree instance')
+            console.time('Draw initial tree')
+            if (!tree.toJSON().l) {
+                await draw()
+            } else {
+                await genInsertOneByOne(1000)()
+                await genBulkInsert(N)()
+            }
+            console.timeEnd('Draw initial tree')
+        } catch (error) {
+            console.error(error)
+        }
+    }
 
-        console.time('bulk-insert ' + K + ' items');
-        tree.load(data2);
-        console.timeEnd('bulk-insert ' + K + ' items');
+    init();
 
-        data = data.concat(data2);
+    function genInsertOneByOne(K) {
+        return async function () {
+            var data2 = genData(K);
 
-        draw();
-    };
-}
+            console.time('insert ' + K + ' items');
+            for (var i = 0; i < K; i++) {
+                await tree.insert(data2[i]);
+            }
+            console.timeEnd('insert ' + K + ' items');
 
-document.getElementById('insert1').onclick = genInsertOneByOne(50000);
-document.getElementById('insert2').onclick = genInsertOneByOne(1000);
-document.getElementById('insert3').onclick = genBulkInsert(50000);
-document.getElementById('insert4').onclick = genBulkInsert(1000);
-document.getElementById('canvas').onclick = search;
-document.getElementById('remove').onclick = remove;
+            data = data.concat(data2);
+
+            await draw();
+        };
+    }
+
+    function genBulkInsert(K) {
+        return async function () {
+            var data2 = genData(K);
+
+            console.time('bulk-insert ' + K + ' items');
+            await tree.load(data2);
+            console.timeEnd('bulk-insert ' + K + ' items');
+
+            data = data.concat(data2);
+
+            await draw();
+        };
+    }
+
+    document.getElementById('insert1').onclick = genInsertOneByOne(50000);
+    document.getElementById('insert2').onclick = genInsertOneByOne(1000);
+    document.getElementById('insert3').onclick = genBulkInsert(50000);
+    document.getElementById('insert4').onclick = genBulkInsert(1000);
+    document.getElementById('canvas').onclick = search;
+    document.getElementById('remove').onclick = remove;
 
 </script>

@@ -1,7 +1,7 @@
-RBush
+Indexed Database RBush
 =====
 
-RBush is a high-performance JavaScript library for 2D **spatial indexing** of points and rectangles.
+IDB-RBush is a high-performance JavaScript library for 2D **spatial indexing** of points and rectangles in an IndexedDB object store.
 It's based on an optimized **R-tree** data structure with **bulk insertion** support.
 
 *Spatial index* is a special data structure for points and rectangles
@@ -9,31 +9,38 @@ that allows you to perform queries like "all items within this bounding box" ver
 (e.g. hundreds of times faster than looping over all items).
 It's most commonly used in maps and data visualizations.
 
-[![Build Status](https://travis-ci.org/mourner/rbush.svg?branch=master)](https://travis-ci.org/mourner/rbush)
-[![](https://img.shields.io/badge/simply-awesome-brightgreen.svg)](https://github.com/mourner/projects)
-
 ## Demos
 
 The demos contain visualization of trees generated from 50k bulk-loaded random points.
-Open web console to see benchmarks;
-click on buttons to insert or remove items;
-click to perform search under the cursor.
-
-* [randomly clustered data](http://mourner.github.io/rbush/viz/viz-cluster.html)
-* [uniformly distributed random data](http://mourner.github.io/rbush/viz/viz-uniform.html)
 
 ## Install
 
-Install with NPM (`npm install rbush`), or use CDN links for browsers:
-[rbush.js](https://unpkg.com/rbush@2.0.1/rbush.js),
-[rbush.min.js](https://unpkg.com/rbush@2.0.1/rbush.min.js)
+Install with NPM (`npm install idb-rbush`).
 
 ## Usage
 
+### Creating an IDBObjectStore
+
+It's important, that the `IDBObjectStore` has the `keyPath` set to `'id'`.
+```js
+const request = self.indexedDB.open(dbName)
+request.onupgradeneeded = () => {
+  const db = request.result
+  db.createObjectStore(objectStoreName, { keyPath: 'id' })
+}
+```
+
 ### Creating a Tree
 
+For creating a tree you need a successfully opened `IDBDatabase` connection object together with an unique name of an `IDBObjectStore`, in which IDB-RBush will persist your **R-tree** data structure. If the function finds an existing root node, the persisted structure will be reused. Otherwise a new root node will be created.
 ```js
-var tree = rbush();
+(async () => {
+  try {
+    const tree = await rbush(db, objectStoreName)
+  } catch (error) {
+    // handle error
+  }
+})()
 ```
 
 An optional argument to `rbush` defines the maximum number of entries in a tree node.
@@ -41,7 +48,13 @@ An optional argument to `rbush` defines the maximum number of entries in a tree 
 Higher value means faster insertion and slower search, and vice versa.
 
 ```js
-var tree = rbush(16);
+(async () => {
+  try {
+    const tree = await rbush(db, objectStoreName, 16)
+  } catch (error) {
+    // handle error
+  }
+})()
 ```
 
 ### Adding Data
@@ -49,14 +62,18 @@ var tree = rbush(16);
 Insert an item:
 
 ```js
-var item = {
-    minX: 20,
-    minY: 40,
-    maxX: 30,
-    maxY: 50,
-    foo: 'bar'
-};
-tree.insert(item);
+(async () => {
+  const item = {
+    bbox: [20, 40, 30, 50], // mandatory
+    foo: 'bar' // any additional data
+  }
+
+  try {
+    await tree.insert(item)
+  } catch (error) {
+    // handle error
+  }
+})()
 ```
 
 ### Removing Data
@@ -64,45 +81,59 @@ tree.insert(item);
 Remove a previously inserted item:
 
 ```js
-tree.remove(item);
+(async () => {
+  try {
+    await tree.remove(item)
+  } catch (error) {
+    // handle error
+  }
+})()
 ```
 
-By default, RBush removes objects by reference.
+By default, IDB-RBush removes objects by reference.
 However, you can pass a custom `equals` function to compare by value for removal,
 which is useful when you only have a copy of the object you need removed (e.g. loaded from server):
 
 ```js
-tree.remove(itemCopy, function (a, b) {
-    return a.id === b.id;
-});
+(async () => {
+  try {
+    await tree.remove(itemCopy, (a, b) => {
+      return a.id === b.id
+    })
+  } catch (error) {
+    // handle error
+  }
+})()
 ```
 
 Remove all items:
 
 ```js
-tree.clear();
+(async () => {
+  try {
+    await tree.clear()
+  } catch (error) {
+    // handle error
+  }
+})()
 ```
 
 ### Data Format
 
-By default, RBush assumes the format of data points to be an object
-with `minX`, `minY`, `maxX` and `maxY` properties.
-You can customize this by providing an array with corresponding accessor strings
-as a second argument to `rbush` like this:
-
-```js
-var tree = rbush(9, ['[0]', '[1]', '[0]', '[1]']); // accept [x, y] points
-tree.insert([20, 50]);
-```
-
-If you're indexing a static list of points (you don't need to add/remove points after indexing), you should use [kdbush](https://github.com/mourner/kdbush) which performs point indexing 5-8x faster than RBush.
+If you're indexing a static list of points (you don't need to add/remove points after indexing), you should use [kdbush](https://github.com/mourner/kdbush) which performs point indexing 5-8x faster than IDB-RBush.
 
 ### Bulk-Inserting Data
 
 Bulk-insert the given data into the tree:
 
 ```js
-tree.load([item1, item2, ...]);
+(async () => {
+  try {
+    await tree.load([item1, item2, ...])
+  } catch (error) {
+    // handle error
+  }
+})()
 ```
 
 Bulk insertion is usually ~2-3 times faster than inserting items one by one.
@@ -119,42 +150,40 @@ but makes query performance worse if the data is scattered.
 ### Search
 
 ```js
-var result = tree.search({
-    minX: 40,
-    minY: 20,
-    maxX: 80,
-    maxY: 70
-});
+(async () => {
+  try {
+    const result = await tree.search([40, 20, 80, 70])
+  } catch (error) {
+    // handle error
+  }
+})()
 ```
 
 Returns an array of data items (points or rectangles) that the given bounding box intersects.
 
-Note that the `search` method accepts a bounding box in `{minX, minY, maxX, maxY}` format
+Note that the `search` method accepts a bounding box in `[minX, minY, maxX, maxY]` format
 regardless of the format specified in the constructor (which only affects inserted objects).
 
 ```js
-var allItems = tree.all();
+(async () => {
+  try {
+    const allItems = await tree.all()
+  } catch (error) {
+    // handle error
+  }
+})()
 ```
 
 Returns all items of the tree.
 
-### Collisions
-
-```js
-var result = tree.collides({minX: 40, minY: 20, maxX: 80, maxY: 70});
-```
-
-Returns `true` if there are any items intersecting the given bounding box, otherwise `false`.
-
-
 ### Export and Import
 
 ```js
-// export data as JSON object
-var treeData = tree.toJSON();
+// export the internal data object tree
+var treeData = tree.toJSON()
 
 // import previously exported data
-var tree = rbush(9).fromJSON(treeData);
+var tree = rbush(9).fromJSON(treeData)
 ```
 
 Importing and exporting as JSON allows you to use RBush on both the server (using Node.js) and the browser combined,
@@ -164,24 +193,8 @@ Note that the `nodeSize` option passed to the constructor must be the same in bo
 
 ### K-Nearest Neighbors
 
-For "_k_ nearest neighbors around a point" type of queries for RBush,
-check out [rbush-knn](https://github.com/mourner/rbush-knn).
-
-## Performance
-
-The following sample performance test was done by generating
-random uniformly distributed rectangles of ~0.01% area and setting `maxEntries` to `16`
-(see `debug/perf.js` script).
-Performed with Node.js v6.2.2 on a Retina Macbook Pro 15 (mid-2012).
-
-Test                         | RBush  | [old RTree](https://github.com/imbcmdth/RTree) | Improvement
----------------------------- | ------ | ------ | ----
-insert 1M items one by one   | 3.18s  | 7.83s  | 2.5x
-1000 searches of 0.01% area  | 0.03s  | 0.93s  | 30x
-1000 searches of 1% area     | 0.35s  | 2.27s  | 6.5x
-1000 searches of 10% area    | 2.18s  | 9.53s  | 4.4x
-remove 1000 items one by one | 0.02s  | 1.18s  | 50x
-bulk-insert 1M items         | 1.25s  | n/a    | 6.7x
+For "_k_ nearest neighbors around a point" type of queries for IDB-RBush,
+check out [rbush-knn](https://github.com/codeart1st/idb-rbush-knn).
 
 ## Algorithms Used
 
@@ -205,15 +218,27 @@ bulk-insert 1M items         | 1.25s  | n/a    | 6.7x
 npm install  # install dependencies
 
 npm test     # check the code with JSHint and run tests
-npm run perf # run performance benchmarks
 npm run cov  # report test coverage (with more detailed report in coverage/lcov-report/index.html)
 ```
 
 ## Compatibility
 
-RBush should run on Node and all major browsers. The only caveat: IE 8 needs an [Array#indexOf polyfill](https://developer.mozilla.org/en/docs/Web/JavaScript/Reference/Global_Objects/Array/indexOf#Polyfill) for `remove` method to work.
+IDB-RBush should run on all major browsers with [IndexedDB support](https://caniuse.com/#feat=indexeddb). It uses various native ES2015 features: promise, arrow function, spread operator, proxy, reflect. And the ES2017 async/await.
 
 ## Changelog
+
+#### 3.0.0 &mdash; Jan 27, 2019
+
+- **Breaking:** Initial fork from rbush to implement a variant with IndexedDB support.
+- **Breaking:** Changed the bbox format again from `{minX: 20, minY: 40, maxX: 30, maxY: 50}` to `bbox: [20, 40, 30, 50]`. Matching the GeoJSON [RFC 7946](https://tools.ietf.org/html/rfc7946) spec and reduce the property access over the proxy objects.
+- **Breaking:** New promise-based API calls for all exported functions because of the IndexedDB asynchronous API.
+- **Breaking:** Now every node in the R-tree data structure has an unique [UUID](https://tools.ietf.org/html/rfc4122) based on this [GitHubGist](https://gist.github.com/jed/982883). The `id` of the root node is always `00000000-0000-0000-0000-000000000000`.
+- **Breaking:** Removed `collides` method from version 1.4.0 -> no use case.
+- **Breaking:** Removed the ability to customize the internal data format.
+- **Breaking:** Removed the method chaining ability because of simplification.
+- Added `fake-indexeddb` for tests running in Node.js.
+- Added Typings Definition file (index.d.ts).
+- Reworked README documentation.
 
 #### 2.0.2 &mdash; Dec 21, 2017
 
@@ -261,30 +286,30 @@ RBush should run on Node and all major browsers. The only caveat: IE 8 needs an 
 
 #### 1.3.2 &mdash; Nov 25, 2013
 
-- Improved removal performance by ~50%. [#18](https://github.com/mourner/rbush/pull/18)
+- Improved removal performance by ~50%. [#18](https://github.com/codeart1st/idb-rbush/pull/18)
 
 #### 1.3.1 &mdash; Nov 24, 2013
 
-- Fixed minor error in the choose split axis algorithm. [#17](https://github.com/mourner/rbush/pull/17)
-- Much better test coverage (near 100%). [#6](https://github.com/mourner/rbush/issues/6)
+- Fixed minor error in the choose split axis algorithm. [#17](https://github.com/codeart1st/idb-rbush/pull/17)
+- Much better test coverage (near 100%). [#6](https://github.com/codeart1st/idb-rbush/issues/6)
 
 #### 1.3.0 &mdash; Nov 21, 2013
 
-- Significantly improved search performance (especially on large-bbox queries — up to 3x faster). [#11](https://github.com/mourner/rbush/pull/11)
-- Added `all` method for getting all of the tree items. [#11](https://github.com/mourner/rbush/pull/11)
-- Made `toBBox`, `compareMinX`, `compareMinY` methods public, made it possible to avoid Content Security Policy issues by overriding them for custom format. [#14](https://github.com/mourner/rbush/pull/14) [#12](https://github.com/mourner/rbush/pull/12)
+- Significantly improved search performance (especially on large-bbox queries — up to 3x faster). [#11](https://github.com/codeart1st/idb-rbush/pull/11)
+- Added `all` method for getting all of the tree items. [#11](https://github.com/codeart1st/idb-rbush/pull/11)
+- Made `toBBox`, `compareMinX`, `compareMinY` methods public, made it possible to avoid Content Security Policy issues by overriding them for custom format. [#14](https://github.com/codeart1st/idb-rbush/pull/14) [#12](https://github.com/codeart1st/idb-rbush/pull/12)
 
 #### 1.2.5 &mdash; Nov 5, 2013
 
-- Fixed a bug where insertion failed on a tree that had all items removed previously. [#10](https://github.com/mourner/rbush/issues/10)
+- Fixed a bug where insertion failed on a tree that had all items removed previously. [#10](https://github.com/codeart1st/idb-rbush/issues/10)
 
 #### 1.2.4 &mdash; Oct 25, 2013
 
-- Added Web Workers support. [#9](https://github.com/mourner/rbush/pull/9)
+- Added Web Workers support. [#9](https://github.com/codeart1st/idb-rbush/pull/9)
 
 #### 1.2.3 &mdash; Aug 30, 2013
 
-- Added AMD support. [#8](https://github.com/mourner/rbush/pull/8)
+- Added AMD support. [#8](https://github.com/codeart1st/idb-rbush/pull/8)
 
 #### 1.2.2 &mdash; Aug 27, 2013
 

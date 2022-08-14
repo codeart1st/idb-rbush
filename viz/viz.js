@@ -13,12 +13,12 @@ if (window.devicePixelRatio > 1) {
 function randBox(size) {
     var x = Math.random() * (W - size),
         y = Math.random() * (W - size);
-    return {
-        minX: x,
-        minY: y,
-        maxX: x + size * Math.random(),
-        maxY: y + size * Math.random()
-    };
+    return [
+        x,
+        y,
+        x + size * Math.random(),
+        y + size * Math.random()
+    ];
 }
 
 function randClusterPoint(dist) {
@@ -32,10 +32,12 @@ function randClusterBox(cluster, dist, size) {
         y = cluster.y - dist + 2 * dist * (Math.random() + Math.random() + Math.random()) / 3;
 
     return {
-        minX: x,
-        minY: y,
-        maxX: x + size * Math.random(),
-        maxY: y + size * Math.random(),
+        bbox: [
+            x,
+            y,
+            x + size * Math.random(),
+            y + size * Math.random()
+        ],
         item: true
     };
 }
@@ -43,33 +45,33 @@ function randClusterBox(cluster, dist, size) {
 var colors = ['#f40', '#0b0', '#37f'],
     rects;
 
-function drawTree(node, level) {
+async function drawTree(node, level) {
     if (!node) { return; }
 
-    var rect = [];
+    var rect = [], bbox = node.bbox;
 
-    rect.push(level ? colors[(node.height - 1) % colors.length] : 'grey');
+    rect.push(level ? colors[(node.h - 1) % colors.length] : 'grey');
     rect.push(level ? 1 / Math.pow(level, 1.2) : 0.2);
     rect.push([
-        Math.round(node.minX),
-        Math.round(node.minY),
-        Math.round(node.maxX - node.minX),
-        Math.round(node.maxY - node.minY)
+        Math.round(bbox[0]),
+        Math.round(bbox[1]),
+        Math.round(bbox[2] - bbox[0]),
+        Math.round(bbox[3] - bbox[1])
     ]);
 
     rects.push(rect);
 
-    if (node.leaf) return;
+    if (node.l) return;
     if (level === 6) { return; }
 
-    for (var i = 0; i < node.children.length; i++) {
-        drawTree(node.children[i], level + 1);
+    for (var i = 0; i < node.c.length; i++) {
+        await drawTree(await node.c[i], level + 1);
     }
 }
 
-function draw() {
+async function draw() {
     rects = [];
-    drawTree(tree.data, 0);
+    await drawTree(tree.toJSON(), 0);
 
     ctx.clearRect(0, 0, W + 1, W + 1);
 
@@ -80,26 +82,26 @@ function draw() {
     }
 }
 
-function search(e) {
+async function search(e) {
     console.time('1 pixel search');
-    tree.search({
-        minX: e.clientX,
-        minY: e.clientY,
-        maxX: e.clientX + 1,
-        maxY: e.clientY + 1
-    });
+    await tree.search([
+        e.clientX,
+        e.clientY,
+        e.clientX + 1,
+        e.clientY + 1
+    ]);
     console.timeEnd('1 pixel search');
 }
 
-function remove() {
+async function remove() {
     data.sort(tree.compareMinX);
     console.time('remove 10000');
     for (var i = 0; i < 10000; i++) {
-        tree.remove(data[i]);
+        await tree.remove(data[i]);
     }
     console.timeEnd('remove 10000');
 
     data.splice(0, 10000);
 
-    draw();
+    await draw();
 };
